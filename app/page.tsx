@@ -18,12 +18,12 @@ export default function Home() {
   const handleSend = async () => {
     if (inputValue.trim() === "") return;
 
-    // 1. 내 질문 화면에 띄우기
+    // 내 질문 화면에 띄우기
     const userMessage = { role: "user", content: inputValue };
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
 
-    // ⭐ 2. AI의 '빈 대답 칸'을 미리 만들기 (여기에 글자가 하나씩 채워집니다)
+    // AI의 빈 말풍선 미리 만들기
     setMessages((prev) => [...prev, { role: "model", content: "" }]);
 
     try {
@@ -35,21 +35,17 @@ export default function Home() {
 
       if (!response.body) throw new Error("스트림을 지원하지 않습니다.");
 
-      // ⭐ 3. 백엔드에서 조각나서 날아오는 글자를 읽을 '해독기' 준비
+      // 스트리밍 데이터 해독기
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let done = false;
 
-      // ⭐ 4. 스트리밍 시작: 데이터가 더 이상 없을 때까지 계속 읽기
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
 
         if (value) {
-          // 암호화된 데이터 조각을 한글/영문 텍스트로 해독
           const chunkText = decoder.decode(value, { stream: true });
-
-          // 가장 마지막 메시지(방금 만든 빈 대답 칸)에 해독한 글자를 이어 붙이기
           setMessages((prev) => {
             const newMessages = [...prev];
             newMessages[newMessages.length - 1].content += chunkText;
@@ -84,7 +80,6 @@ export default function Home() {
 
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            {/* ⭐ whitespace-pre-wrap: 제미나이가 보내는 줄바꿈(\n)을 화면에 그대로 적용합니다 */}
             <div className={`px-4 py-3 max-w-[85%] text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${
               msg.role === "user"
                 ? "bg-blue-500 text-white rounded-2xl rounded-tr-none"
