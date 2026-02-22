@@ -6,7 +6,7 @@ const genAI = new GoogleGenerativeAI(apiKey || "");
 export async function POST(req: Request) {
   try {
     const { message } = await req.json();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
 
     const systemPrompt = `
       너는 유튜브 채널 '허리인사이드'의 전문 상담가 AI야. 
