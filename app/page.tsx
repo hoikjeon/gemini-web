@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 
 export default function Home() {
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
   const [inputValue, setInputValue] = useState("");
+  
+  // ⭐ 로딩 상태를 관리하는 변수 추가
+  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -18,12 +22,12 @@ export default function Home() {
   const handleSend = async () => {
     if (inputValue.trim() === "") return;
 
-    // 내 질문 화면에 띄우기
     const userMessage = { role: "user", content: inputValue };
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
-
-    // AI의 빈 말풍선 미리 만들기
+    
+    // ⭐ 통신 시작: 로딩 켜고, AI 빈 말풍선 만들기
+    setIsLoading(true);
     setMessages((prev) => [...prev, { role: "model", content: "" }]);
 
     try {
@@ -35,7 +39,6 @@ export default function Home() {
 
       if (!response.body) throw new Error("스트림을 지원하지 않습니다.");
 
-      // 스트리밍 데이터 해독기
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let done = false;
@@ -55,12 +58,16 @@ export default function Home() {
       }
     } catch (error) {
       console.error("스트리밍 오류:", error);
-      alert("제미나이와 연결하는 중 문제가 발생했습니다.");
+      alert("제미나이와 연결하는 중 문제가 발생했습니다. 무료 할당량을 확인해 주세요.");
+    } finally {
+      // ⭐ 통신 종료: 성공하든 에러가 나든 무조건 로딩 끄기
+      setIsLoading(false);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") handleSend();
+    // 로딩 중이 아닐 때만 엔터키 작동
+    if (e.key === "Enter" && !isLoading) handleSend();
   };
 
   return (
@@ -74,21 +81,39 @@ export default function Home() {
           <div className="mt-20 text-center">
             <p className="text-5xl mb-6">🧘‍♂️</p>
             <p className="text-gray-500 font-medium text-lg">안녕하세요! 허리인사이드입니다.</p>
-            <p className="text-blue-500 text-sm mt-2 font-semibold">✨ 실시간 스트리밍 모드 켜짐!</p>
+            <p className="text-blue-500 text-sm mt-2 font-semibold">✨ 마크다운 UI & 로딩 기능 적용 완료!</p>
           </div>
         )}
 
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`px-4 py-3 max-w-[85%] text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${
+            <div className={`px-4 py-3 max-w-[85%] text-sm leading-relaxed shadow-sm ${
               msg.role === "user"
-                ? "bg-blue-500 text-white rounded-2xl rounded-tr-none"
-                : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-none"
+                ? "bg-blue-500 text-white rounded-2xl rounded-tr-none whitespace-pre-wrap"
+                : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-none overflow-hidden"
             }`}>
-              {msg.content}
+              {/* ⭐ AI의 답변일 경우에만 마크다운 디자인 적용 */}
+             {msg.role === "model" ? (
+  <div className="whitespace-pre-wrap break-words">
+    <ReactMarkdown>
+      {msg.content}
+    </ReactMarkdown>
+  </div>
+              ) : (
+                msg.content
+              )}
             </div>
           </div>
         ))}
+        
+        {/* ⭐ 로딩 중일 때 표시되는 스피너 영역 */}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="px-4 py-3 bg-gray-100 text-gray-500 rounded-2xl rounded-tl-none text-sm shadow-sm animate-pulse">
+              제미나이가 열심히 답변을 작성 중입니다... ✍️
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -99,12 +124,14 @@ export default function Home() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            disabled={isLoading} // 로딩 중 입력 방지
             placeholder="증상이나 궁금한 점을 입력하세요..."
-            className="flex-1 rounded-full border border-gray-200 px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+            className="flex-1 rounded-full border border-gray-200 px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
           />
           <button
             onClick={handleSend}
-            className="rounded-full bg-blue-600 px-6 py-3 font-bold text-white transition-all hover:bg-blue-700 active:scale-95 whitespace-nowrap"
+            disabled={isLoading} // 로딩 중 클릭 방지
+            className="rounded-full bg-blue-600 px-6 py-3 font-bold text-white transition-all hover:bg-blue-700 active:scale-95 whitespace-nowrap disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             전송
           </button>
