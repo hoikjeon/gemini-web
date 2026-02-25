@@ -4,12 +4,19 @@ import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 
 export default function Home() {
-  // ⭐ 1. 메시지 저장소에 'image' 자리 추가
   const [messages, setMessages] = useState<{ role: string; content: string; image?: string | null }[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 추천 질문 리스트
+  const quickReplies = [
+    "⚡ 허리가 찌릿찌릿 아파요",
+    "🧘 집에서 하는 허리 스트레칭",
+    "🦴 디스크 초기 증상이 궁금해요",
+    "🐢 거북목 교정 자세 알려줘"
+  ];
 
   useEffect(() => {
     const savedMessages = localStorage.getItem("chatHistory");
@@ -52,11 +59,12 @@ export default function Home() {
 
   const handleRemoveImage = () => setSelectedImage(null);
 
-  const handleSend = async () => {
-    if (inputValue.trim() === "" && !selectedImage) return;
+  // 만능 전송 로직
+  const executeSend = async (textToSend: string, imageToSend: string | null) => {
+    if (textToSend.trim() === "" && !imageToSend) return;
+    if (isLoading) return;
 
-    // ⭐ 2. 백엔드로 보낼 메시지에 사진(selectedImage)도 함께 포장!
-    const userMessage = { role: "user", content: inputValue || "사진을 보냈습니다.", image: selectedImage };
+    const userMessage = { role: "user", content: textToSend || "사진을 보냈습니다.", image: imageToSend };
     const newMessages = [...messages, userMessage];
     
     setMessages(newMessages);
@@ -98,6 +106,9 @@ export default function Home() {
     }
   };
 
+  const handleSend = () => executeSend(inputValue, selectedImage);
+  const handleQuickReply = (text: string) => executeSend(text, null);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !isLoading) handleSend();
   };
@@ -113,10 +124,22 @@ export default function Home() {
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
         {messages.length === 0 && (
-          <div className="mt-20 text-center">
-            <p className="text-5xl mb-6">👁️</p>
-            <p className="text-gray-500 font-medium text-lg">안녕하세요! 허리인사이드입니다.</p>
-            <p className="text-blue-500 text-sm mt-2 font-semibold">✨ 사진 분석(Vision) 기능 탑재 완료!</p>
+          <div className="mt-12 text-center animate-fade-in-up">
+            <p className="text-5xl mb-4">🩺</p>
+            <p className="text-gray-700 font-bold text-xl">안녕하세요! 허리인사이드입니다.</p>
+            <p className="text-gray-500 text-sm mt-2">척추/관절 건강에 대해 무엇이든 물어보세요.</p>
+            
+            <div className="mt-8 flex flex-wrap justify-center gap-2 max-w-md mx-auto">
+              {quickReplies.map((reply, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleQuickReply(reply)}
+                  className="bg-white border border-blue-200 text-blue-600 px-4 py-2 rounded-full text-sm font-medium hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm active:scale-95"
+                >
+                  {reply}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -127,7 +150,6 @@ export default function Home() {
                 ? "bg-blue-500 text-white rounded-2xl rounded-tr-none whitespace-pre-wrap"
                 : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-none overflow-hidden"
             }`}>
-              {/* ⭐ 3. 내가 보낸 사진이 말풍선 안에 예쁘게 뜨도록 추가 */}
               {msg.image && (
                 <img src={msg.image} alt="첨부됨" className="w-full max-w-xs h-auto rounded-lg mb-2 shadow-sm border border-blue-400" />
               )}
@@ -145,7 +167,7 @@ export default function Home() {
         {isLoading && (
           <div className="flex justify-start">
             <div className="px-4 py-3 bg-gray-100 text-gray-500 rounded-2xl rounded-tl-none text-sm shadow-sm animate-pulse">
-              제미나이가 열심히 사진을 분석 중입니다... 🔍
+              제미나이가 열심히 답변을 작성 중입니다... ✍️
             </div>
           </div>
         )}
@@ -170,6 +192,7 @@ export default function Home() {
             </svg>
           </label>
           <input type="file" id="imageUpload" accept="image/*" className="hidden" onChange={handleImageUpload} />
+          {/* ⭐ 여기에 text-gray-900 클래스를 추가해서 글씨를 진하게 만들었습니다! ⭐ */}
           <input
             type="text"
             value={inputValue}
@@ -177,7 +200,7 @@ export default function Home() {
             onKeyDown={handleKeyDown}
             disabled={isLoading}
             placeholder="사진을 첨부하거나 증상을 입력하세요..."
-            className="flex-1 rounded-full border border-gray-200 px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+            className="flex-1 rounded-full border border-gray-200 px-5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
           />
           <button
             onClick={handleSend}
