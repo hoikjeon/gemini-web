@@ -45,6 +45,7 @@ export default function Home() {
     if (confirm("대화 기록을 모두 지우시겠습니까?")) {
       setMessages([]);
       localStorage.removeItem("chatHistory");
+      window.speechSynthesis.cancel(); // 💡 대화 지울 때 읽어주던 목소리도 끄기
     }
   };
 
@@ -82,12 +83,11 @@ export default function Home() {
 
   const handleRemoveImage = () => setSelectedImage(null);
 
-  // ⭐ 타입스크립트 에러를 방지하는 마법의 'win' 치트키 적용!
   const handleSpeechRecognition = () => {
-    const win = window as any; // 👈 깐깐한 검사를 무사통과하는 치트키입니다.
+    const win = window as any;
     
     if (!("webkitSpeechRecognition" in win) && !("SpeechRecognition" in win)) {
-      alert("현재 브라우저에서는 음성 인식 기능을 지원하지 않습니다. 크롬(Chrome)이나 사파리(Safari)를 이용해 주세요.");
+      alert("현재 브라우저에서는 음성 인식 기능을 지원하지 않습니다.");
       return;
     }
 
@@ -99,24 +99,45 @@ export default function Home() {
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => setIsListening(true);
-
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       setInputValue((prev) => prev + (prev ? " " : "") + transcript);
     };
-
     recognition.onerror = () => {
       alert("음성 인식 중 오류가 발생했습니다. 다시 시도해 주세요.");
       setIsListening(false);
     };
     recognition.onend = () => setIsListening(false);
-
     recognition.start();
+  };
+
+  // ⭐ 12일차 핵심: 답변을 또박또박 읽어주는 마법사 함수 (TTS)
+  const handleSpeak = (text: string) => {
+    if (!("speechSynthesis" in window)) {
+      alert("현재 브라우저에서는 음성 합성(읽어주기) 기능을 지원하지 않습니다.");
+      return;
+    }
+
+    // 혹시 이전에 읽고 있던 게 있다면 멈춤
+    window.speechSynthesis.cancel();
+
+    // 💡 별표(**)나 샵(#) 같은 마크다운 기호를 말끔히 지워서 예쁜 한글만 남김
+    const cleanText = text.replace(/[*#_]/g, "").trim();
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = "ko-KR"; // 한국어 목소리
+    utterance.rate = 1.0;     // 읽는 속도 (1.0이 기본)
+    utterance.pitch = 1.0;    // 목소리 톤 (높낮이)
+
+    // 말하기 시작!
+    window.speechSynthesis.speak(utterance);
   };
 
   const executeSend = async (textToSend: string, imageToSend: string | null) => {
     if (textToSend.trim() === "" && !imageToSend) return;
     if (isLoading) return;
+
+    window.speechSynthesis.cancel(); // 💡 새로운 질문을 보내면 읽던 것을 멈춥니다.
 
     const userMessage = { role: "user", content: textToSend || "사진을 보냈습니다.", image: imageToSend };
     const newMessages = [...messages, userMessage];
@@ -198,9 +219,32 @@ export default function Home() {
 
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`px-4 py-3 max-w-[85%] text-sm leading-relaxed shadow-sm ${msg.role === "user" ? "bg-blue-500 text-white rounded-2xl rounded-tr-none whitespace-pre-wrap" : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-none overflow-hidden"}`}>
+            <div className={`px-4 py-3 max-w-[85%] text-sm leading-relaxed shadow-sm ${msg.role === "user" ? "bg-blue-500 text-white rounded-2xl rounded-tr-none whitespace-pre-wrap" : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-none overflow-hidden flex flex-col"}`}>
               {msg.image && <img src={msg.image} alt="첨부됨" className="w-full max-w-xs h-auto rounded-lg mb-2 shadow-sm border border-blue-400" />}
-              {msg.role === "model" ? <div className="whitespace-pre-wrap break-words prose prose-sm"><ReactMarkdown>{msg.content}</ReactMarkdown></div> : msg.content}
+              
+              {/* 제미나이 답변(텍스트) 렌더링 영역 */}
+              {msg.role === "model" ? (
+                <>
+                  <div className="whitespace-pre-wrap break-words prose prose-sm">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                  {/* ⭐ 모델의 답변일 때만 [🔊 읽어주기] 버튼을 표시합니다! */}
+                  {msg.content.length > 0 && !isLoading && index === messages.length - 1 && (
+                    <button
+                      onClick={() => handleSpeak(msg.content)}
+                      className="mt-3 text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 bg-gray-50 px-3 py-1.5 rounded-full transition-colors w-max border border-gray-200 shadow-sm"
+                      title="소리내어 읽기"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                      </svg>
+                      읽어주기
+                    </button>
+                  )}
+                </>
+              ) : (
+                msg.content
+              )}
             </div>
           </div>
         ))}
