@@ -6,18 +6,37 @@ import ReactMarkdown from "react-markdown";
 export default function Home() {
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
   const [inputValue, setInputValue] = useState("");
-  
-  // ⭐ 로딩 상태를 관리하는 변수 추가
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // ⭐ 1. 처음 사이트에 들어왔을 때: 수첩(로컬 스토리지)에서 기존 대화 꺼내오기
+  useEffect(() => {
+    const savedMessages = localStorage.getItem("chatHistory");
+    if (savedMessages) {
+      setMessages(JSON.parse(savedMessages));
+    }
+  }, []);
+
+  // ⭐ 2. 대화가 바뀔 때마다: 수첩(로컬 스토리지)에 새로운 대화 덮어쓰기
+  useEffect(() => {
+    // 빈 배열일 때는 저장하지 않도록 방어 (초기화 방지)
+    if (messages.length > 0) {
+      localStorage.setItem("chatHistory", JSON.stringify(messages));
+    }
+    scrollToBottom();
+  }, [messages]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // 대화 초기화 버튼 기능 추가
+  const handleClearChat = () => {
+    if (confirm("대화 기록을 모두 지우시겠습니까?")) {
+      setMessages([]);
+      localStorage.removeItem("chatHistory");
+    }
+  };
 
   const handleSend = async () => {
     if (inputValue.trim() === "") return;
@@ -26,7 +45,6 @@ export default function Home() {
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     
-    // ⭐ 통신 시작: 로딩 켜고, AI 빈 말풍선 만들기
     setIsLoading(true);
     setMessages((prev) => [...prev, { role: "model", content: "" }]);
 
@@ -58,22 +76,24 @@ export default function Home() {
       }
     } catch (error) {
       console.error("스트리밍 오류:", error);
-      alert("제미나이와 연결하는 중 문제가 발생했습니다. 무료 할당량을 확인해 주세요.");
+      alert("제미나이와 연결하는 중 문제가 발생했습니다.");
     } finally {
-      // ⭐ 통신 종료: 성공하든 에러가 나든 무조건 로딩 끄기
       setIsLoading(false);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // 로딩 중이 아닐 때만 엔터키 작동
     if (e.key === "Enter" && !isLoading) handleSend();
   };
 
   return (
-    <main className="flex h-screen flex-col bg-gray-50 max-w-2xl mx-auto shadow-xl border-x border-gray-200">
-      <header className="bg-blue-600 p-4 text-white shadow-md text-center">
-        <h1 className="text-xl font-bold">🏥 허리인사이드 전문가 상담</h1>
+    <main className="flex h-screen flex-col bg-gray-50 max-w-2xl mx-auto shadow-xl border-x border-gray-200 relative">
+      <header className="bg-blue-600 p-4 text-white shadow-md flex justify-between items-center">
+        <h1 className="text-xl font-bold flex-1 text-center ml-8">🏥 허리인사이드 전문가 상담</h1>
+        {/* ⭐ 대화 초기화 버튼 추가 */}
+        <button onClick={handleClearChat} className="text-xs bg-blue-700 px-3 py-1 rounded-full hover:bg-blue-800 transition">
+          기록 삭제
+        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
@@ -81,7 +101,7 @@ export default function Home() {
           <div className="mt-20 text-center">
             <p className="text-5xl mb-6">🧘‍♂️</p>
             <p className="text-gray-500 font-medium text-lg">안녕하세요! 허리인사이드입니다.</p>
-            <p className="text-blue-500 text-sm mt-2 font-semibold">✨ 마크다운 UI & 로딩 기능 적용 완료!</p>
+            <p className="text-blue-500 text-sm mt-2 font-semibold">✨ 대화 자동 저장 기능 켜짐!</p>
           </div>
         )}
 
@@ -92,13 +112,10 @@ export default function Home() {
                 ? "bg-blue-500 text-white rounded-2xl rounded-tr-none whitespace-pre-wrap"
                 : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-none overflow-hidden"
             }`}>
-              {/* ⭐ AI의 답변일 경우에만 마크다운 디자인 적용 */}
-             {msg.role === "model" ? (
-  <div className="whitespace-pre-wrap break-words">
-    <ReactMarkdown>
-      {msg.content}
-    </ReactMarkdown>
-  </div>
+              {msg.role === "model" ? (
+                <div className="whitespace-pre-wrap break-words prose prose-sm">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
               ) : (
                 msg.content
               )}
@@ -106,7 +123,6 @@ export default function Home() {
           </div>
         ))}
         
-        {/* ⭐ 로딩 중일 때 표시되는 스피너 영역 */}
         {isLoading && (
           <div className="flex justify-start">
             <div className="px-4 py-3 bg-gray-100 text-gray-500 rounded-2xl rounded-tl-none text-sm shadow-sm animate-pulse">
@@ -124,13 +140,13 @@ export default function Home() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isLoading} // 로딩 중 입력 방지
+            disabled={isLoading}
             placeholder="증상이나 궁금한 점을 입력하세요..."
             className="flex-1 rounded-full border border-gray-200 px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
           />
           <button
             onClick={handleSend}
-            disabled={isLoading} // 로딩 중 클릭 방지
+            disabled={isLoading}
             className="rounded-full bg-blue-600 px-6 py-3 font-bold text-white transition-all hover:bg-blue-700 active:scale-95 whitespace-nowrap disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             전송
