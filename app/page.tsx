@@ -11,6 +11,10 @@ export default function Home() {
   const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 📊 통계 상태 관리
+  const [totalCount, setTotalCount] = useState(0);
+  const [todayCount, setTodayCount] = useState(0);
+
   const quickReplies = [
     "⚡ 허리가 찌릿찌릿 아파요",
     "🧘 집에서 하는 허리 스트레칭",
@@ -19,14 +23,29 @@ export default function Home() {
   ];
 
   useEffect(() => {
+    // 채팅 내역 로드
     const savedMessages = localStorage.getItem("chatHistory");
     if (savedMessages) {
       try {
         const parsed = JSON.parse(savedMessages);
         if (Array.isArray(parsed)) setMessages(parsed);
-      } catch (error) {
-        localStorage.removeItem("chatHistory");
-      }
+      } catch (e) { localStorage.removeItem("chatHistory"); }
+    }
+
+    // 통계 데이터 로드
+    const savedTotal = localStorage.getItem("totalConsults");
+    const savedToday = localStorage.getItem("todayConsults");
+    const lastDate = localStorage.getItem("lastConsultDate");
+    const currentDate = new Date().toLocaleDateString();
+
+    if (savedTotal) setTotalCount(parseInt(savedTotal));
+
+    if (lastDate === currentDate) {
+      if (savedToday) setTodayCount(parseInt(savedToday));
+    } else {
+      setTodayCount(0);
+      localStorage.setItem("todayConsults", "0");
+      localStorage.setItem("lastConsultDate", currentDate);
     }
   }, []);
 
@@ -45,30 +64,22 @@ export default function Home() {
     if (confirm("대화 기록을 모두 지우시겠습니까?")) {
       setMessages([]);
       localStorage.removeItem("chatHistory");
-      window.speechSynthesis.cancel(); // 💡 대화 지울 때 읽어주던 목소리도 끄기
+      window.speechSynthesis.cancel();
     }
   };
 
   const handleDownloadChat = () => {
-    if (messages.length === 0) {
-      alert("저장할 상담 기록이 없습니다.");
-      return;
-    }
+    if (messages.length === 0) { alert("저장할 상담 기록이 없습니다."); return; }
     const chatText = messages.map(msg => {
       const roleName = msg.role === "user" ? "👤 환자" : "🏥 허리인사이드";
-      let content = msg.content;
-      if (msg.image) content = "[사진 첨부됨]\n" + content;
-      return `${roleName}:\n${content}\n\n--------------------------------------------------\n\n`;
+      return `${roleName}:\n${msg.content}\n\n`;
     }).join("");
-
     const blob = new Blob([chatText], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "허리인사이드_사전문진표.txt";
-    document.body.appendChild(link);
+    link.download = "허리인사이드_상담기록.txt";
     link.click();
-    document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
@@ -81,55 +92,31 @@ export default function Home() {
     }
   };
 
-  const handleRemoveImage = () => setSelectedImage(null);
-
+  // ⭐ 에러 발생 지점: window as any를 사용하여 SpeechRecognition 문제를 해결합니다.
   const handleSpeechRecognition = () => {
     const win = window as any;
-    
     if (!("webkitSpeechRecognition" in win) && !("SpeechRecognition" in win)) {
       alert("현재 브라우저에서는 음성 인식 기능을 지원하지 않습니다.");
       return;
     }
-
     const SpeechRecognition = win.SpeechRecognition || win.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
-
     recognition.lang = "ko-KR";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
     recognition.onstart = () => setIsListening(true);
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       setInputValue((prev) => prev + (prev ? " " : "") + transcript);
     };
-    recognition.onerror = () => {
-      alert("음성 인식 중 오류가 발생했습니다. 다시 시도해 주세요.");
-      setIsListening(false);
-    };
+    recognition.onerror = () => setIsListening(false);
     recognition.onend = () => setIsListening(false);
     recognition.start();
   };
 
-  // ⭐ 12일차 핵심: 답변을 또박또박 읽어주는 마법사 함수 (TTS)
   const handleSpeak = (text: string) => {
-    if (!("speechSynthesis" in window)) {
-      alert("현재 브라우저에서는 음성 합성(읽어주기) 기능을 지원하지 않습니다.");
-      return;
-    }
-
-    // 혹시 이전에 읽고 있던 게 있다면 멈춤
     window.speechSynthesis.cancel();
-
-    // 💡 별표(**)나 샵(#) 같은 마크다운 기호를 말끔히 지워서 예쁜 한글만 남김
     const cleanText = text.replace(/[*#_]/g, "").trim();
-
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = "ko-KR"; // 한국어 목소리
-    utterance.rate = 1.0;     // 읽는 속도 (1.0이 기본)
-    utterance.pitch = 1.0;    // 목소리 톤 (높낮이)
-
-    // 말하기 시작!
+    utterance.lang = "ko-KR";
     window.speechSynthesis.speak(utterance);
   };
 
@@ -137,14 +124,19 @@ export default function Home() {
     if (textToSend.trim() === "" && !imageToSend) return;
     if (isLoading) return;
 
-    window.speechSynthesis.cancel(); // 💡 새로운 질문을 보내면 읽던 것을 멈춥니다.
+    const newTotal = totalCount + 1;
+    const newToday = todayCount + 1;
+    setTotalCount(newTotal);
+    setTodayCount(newToday);
+    localStorage.setItem("totalConsults", newTotal.toString());
+    localStorage.setItem("todayConsults", newToday.toString());
+    localStorage.setItem("lastConsultDate", new Date().toLocaleDateString());
 
     const userMessage = { role: "user", content: textToSend || "사진을 보냈습니다.", image: imageToSend };
     const newMessages = [...messages, userMessage];
-    
     setMessages(newMessages);
     setInputValue("");
-    setSelectedImage(null); 
+    setSelectedImage(null);
     setIsLoading(true);
     setMessages((prev) => [...prev, { role: "model", content: "" }]);
 
@@ -154,38 +146,24 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: newMessages }),
       });
-
-      if (!response.body) throw new Error("스트림을 지원하지 않습니다.");
-
-      const reader = response.body.getReader();
+      const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      let done = false;
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (value) {
-          const chunkText = decoder.decode(value, { stream: true });
-          setMessages((prev) => {
-            const updatedMessages = [...prev];
-            updatedMessages[updatedMessages.length - 1].content += chunkText;
-            return updatedMessages;
-          });
+      if (reader) {
+        let done = false;
+        while (!done) {
+          const { value, done: readerDone } = await reader.read();
+          done = readerDone;
+          if (value) {
+            const chunkText = decoder.decode(value, { stream: true });
+            setMessages((prev) => {
+              const updated = [...prev];
+              updated[updated.length - 1].content += chunkText;
+              return updated;
+            });
+          }
         }
       }
-    } catch (error) {
-      console.error("스트리밍 오류:", error);
-      alert("제미나이와 연결하는 중 문제가 발생했습니다.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSend = () => executeSend(inputValue, selectedImage);
-  const handleQuickReply = (text: string) => executeSend(text, null);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !isLoading) handleSend();
+    } catch (e) { alert("연결 오류 발생"); } finally { setIsLoading(false); }
   };
 
   return (
@@ -193,13 +171,25 @@ export default function Home() {
       <header className="bg-blue-600 p-4 text-white shadow-md flex justify-between items-center">
         <h1 className="text-xl font-bold flex-1 text-center ml-8">🏥 허리인사이드 전문가 상담</h1>
         <div className="flex gap-2">
-          <button onClick={handleDownloadChat} className="text-xs bg-emerald-500 px-3 py-1 rounded-full text-white hover:bg-emerald-600 transition flex items-center gap-1 shadow-sm font-medium">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-            저장
-          </button>
+          <button onClick={handleDownloadChat} className="text-xs bg-emerald-500 px-3 py-1 rounded-full text-white hover:bg-emerald-600 transition flex items-center gap-1 shadow-sm font-medium">저장</button>
           <button onClick={handleClearChat} className="text-xs bg-blue-700 px-3 py-1 rounded-full hover:bg-blue-800 transition shadow-sm font-medium">삭제</button>
         </div>
       </header>
+
+      <section className="bg-blue-50 border-b border-blue-100 py-1.5 px-4 flex justify-between items-center text-[11px] font-semibold text-blue-800">
+        <div className="flex items-center gap-1.5">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
+          </span>
+          현재 실시간 상담 운영 중
+        </div>
+        <div className="flex gap-3">
+          <span>오늘 상담: <span className="text-blue-600">{todayCount}</span>건</span>
+          <span className="text-gray-300">|</span>
+          <span>누적 상담: <span className="text-blue-600">{totalCount.toLocaleString()}</span>건</span>
+        </div>
+      </section>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
         {messages.length === 0 && (
@@ -209,9 +199,7 @@ export default function Home() {
             <p className="text-gray-500 text-sm mt-2">척추/관절 건강에 대해 무엇이든 물어보세요.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-2 max-w-md mx-auto">
               {quickReplies.map((reply, index) => (
-                <button key={index} onClick={() => handleQuickReply(reply)} className="bg-white border border-blue-200 text-blue-600 px-4 py-2 rounded-full text-sm font-medium hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm active:scale-95">
-                  {reply}
-                </button>
+                <button key={index} onClick={() => executeSend(reply, null)} className="bg-white border border-blue-200 text-blue-600 px-4 py-2 rounded-full text-sm font-medium hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm active:scale-95">{reply}</button>
               ))}
             </div>
           </div>
@@ -219,88 +207,42 @@ export default function Home() {
 
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`px-4 py-3 max-w-[85%] text-sm leading-relaxed shadow-sm ${msg.role === "user" ? "bg-blue-500 text-white rounded-2xl rounded-tr-none whitespace-pre-wrap" : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-none overflow-hidden flex flex-col"}`}>
-              {msg.image && <img src={msg.image} alt="첨부됨" className="w-full max-w-xs h-auto rounded-lg mb-2 shadow-sm border border-blue-400" />}
-              
-              {/* 제미나이 답변(텍스트) 렌더링 영역 */}
+            <div className={`px-4 py-3 max-w-[85%] text-sm leading-relaxed shadow-sm ${msg.role === "user" ? "bg-blue-500 text-white rounded-2xl rounded-tr-none" : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-none flex flex-col"}`}>
+              {msg.image && <img src={msg.image} alt="첨부" className="w-full max-w-xs h-auto rounded-lg mb-2 shadow-sm border border-blue-400" />}
               {msg.role === "model" ? (
                 <>
-                  <div className="whitespace-pre-wrap break-words prose prose-sm">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  </div>
-                  {/* ⭐ 모델의 답변일 때만 [🔊 읽어주기] 버튼을 표시합니다! */}
+                  <div className="prose prose-sm"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
                   {msg.content.length > 0 && !isLoading && index === messages.length - 1 && (
-                    <button
-                      onClick={() => handleSpeak(msg.content)}
-                      className="mt-3 text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 bg-gray-50 px-3 py-1.5 rounded-full transition-colors w-max border border-gray-200 shadow-sm"
-                      title="소리내어 읽기"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
-                      </svg>
-                      읽어주기
+                    <button onClick={() => handleSpeak(msg.content)} className="mt-3 text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 bg-gray-50 px-3 py-1.5 rounded-full transition-colors w-max border border-gray-200 shadow-sm">
+                      🔊 읽어주기
                     </button>
                   )}
                 </>
-              ) : (
-                msg.content
-              )}
+              ) : msg.content}
             </div>
           </div>
         ))}
-        
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="px-4 py-3 bg-gray-100 text-gray-500 rounded-2xl rounded-tl-none text-sm shadow-sm animate-pulse">
-              제미나이가 열심히 답변을 작성 중입니다... ✍️
-            </div>
-          </div>
-        )}
+        {isLoading && <div className="px-4 py-3 bg-gray-100 text-gray-500 rounded-2xl w-max animate-pulse text-sm">답변 중... ✍️</div>}
         <div ref={messagesEndRef} />
       </div>
 
-      <footer className="bg-white p-4 border-t border-gray-100 pb-8 md:pb-4 flex flex-col gap-2">
+      <footer className="bg-white p-4 border-t border-gray-100 flex flex-col gap-2">
         {selectedImage && (
-          <div className="relative inline-block w-24 h-24 max-w-xl mx-auto self-start ml-2 mb-2 animate-fade-in-up">
-            <img src={selectedImage} alt="미리보기" className="object-cover w-full h-full rounded-lg border border-gray-300 shadow-sm" />
-            <button onClick={handleRemoveImage} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold hover:bg-red-600 shadow-md">X</button>
+          <div className="relative inline-block w-20 h-20 mb-2">
+            <img src={selectedImage} alt="미리보기" className="object-cover w-full h-full rounded-lg border shadow-sm" />
+            <button onClick={() => setSelectedImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px]">X</button>
           </div>
         )}
-
-        <div className="flex gap-2 max-w-xl mx-auto w-full items-center">
-          <label htmlFor="imageUpload" className="cursor-pointer text-gray-500 hover:text-blue-600 transition-colors p-2 bg-gray-100 rounded-full hover:bg-gray-200">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
+        <div className="flex gap-2 items-center">
+          <label htmlFor="img" className="cursor-pointer p-2 bg-gray-100 rounded-full hover:bg-gray-200">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-gray-500"><path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
           </label>
-          <input type="file" id="imageUpload" accept="image/*" className="hidden" onChange={handleImageUpload} />
-          
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading || isListening}
-            placeholder={isListening ? "말씀해 주세요... 👂" : "사진을 첨부하거나 증상을 입력하세요..."}
-            className="flex-1 rounded-full border border-gray-200 px-5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
-          />
-          
-          <button
-            onClick={handleSpeechRecognition}
-            disabled={isLoading}
-            className={`p-3 rounded-full transition-all flex-shrink-0 ${
-              isListening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-blue-600"
-            }`}
-            title="음성으로 입력하기"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-            </svg>
+          <input type="file" id="img" accept="image/*" className="hidden" onChange={handleImageUpload} />
+          <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && executeSend(inputValue, selectedImage)} placeholder={isListening ? "듣고 있어요..." : "메시지 입력..."} className="flex-1 rounded-full border border-gray-200 px-5 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          <button onClick={handleSpeechRecognition} className={`p-2.5 rounded-full ${isListening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500"}`}>
+            🎤
           </button>
-
-          <button
-            onClick={handleSend}
-            disabled={isLoading || (inputValue.trim() === "" && !selectedImage)}
-            className="rounded-full bg-blue-600 px-6 py-3 font-bold text-white transition-all hover:bg-blue-700 active:scale-95 whitespace-nowrap disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >전송</button>
+          <button onClick={() => executeSend(inputValue, selectedImage)} disabled={isLoading || (!inputValue.trim() && !selectedImage)} className="bg-blue-600 text-white px-5 py-2.5 rounded-full font-bold text-sm active:scale-95 disabled:bg-gray-300">전송</button>
         </div>
       </footer>
     </main>
