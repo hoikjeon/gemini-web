@@ -4,15 +4,22 @@ import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 
 export default function Home() {
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  // ⭐ 1. 메시지 저장소에 'image' 자리 추가
+  const [messages, setMessages] = useState<{ role: string; content: string; image?: string | null }[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const savedMessages = localStorage.getItem("chatHistory");
     if (savedMessages) {
-      setMessages(JSON.parse(savedMessages));
+      try {
+        const parsed = JSON.parse(savedMessages);
+        if (Array.isArray(parsed)) setMessages(parsed);
+      } catch (error) {
+        localStorage.removeItem("chatHistory");
+      }
     }
   }, []);
 
@@ -34,22 +41,34 @@ export default function Home() {
     }
   };
 
-  const handleSend = async () => {
-    if (inputValue.trim() === "") return;
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setSelectedImage(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
 
-    const userMessage = { role: "user", content: inputValue };
-    const newMessages = [...messages, userMessage]; // ⭐ 현재까지의 모든 대화 묶기
+  const handleRemoveImage = () => setSelectedImage(null);
+
+  const handleSend = async () => {
+    if (inputValue.trim() === "" && !selectedImage) return;
+
+    // ⭐ 2. 백엔드로 보낼 메시지에 사진(selectedImage)도 함께 포장!
+    const userMessage = { role: "user", content: inputValue || "사진을 보냈습니다.", image: selectedImage };
+    const newMessages = [...messages, userMessage];
     
-    setMessages(newMessages); // 내 화면에 먼저 질문 띄우기
+    setMessages(newMessages);
     setInputValue("");
+    setSelectedImage(null); 
     setIsLoading(true);
-    setMessages((prev) => [...prev, { role: "model", content: "" }]); // AI 빈 말풍선
+    setMessages((prev) => [...prev, { role: "model", content: "" }]);
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // ⭐ 백엔드로 방금 친 질문 하나가 아닌 '전체 대화 기록'을 보냅니다.
         body: JSON.stringify({ messages: newMessages }),
       });
 
@@ -62,7 +81,6 @@ export default function Home() {
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
-
         if (value) {
           const chunkText = decoder.decode(value, { stream: true });
           setMessages((prev) => {
@@ -96,9 +114,9 @@ export default function Home() {
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
         {messages.length === 0 && (
           <div className="mt-20 text-center">
-            <p className="text-5xl mb-6">🧘‍♂️</p>
+            <p className="text-5xl mb-6">👁️</p>
             <p className="text-gray-500 font-medium text-lg">안녕하세요! 허리인사이드입니다.</p>
-            <p className="text-blue-500 text-sm mt-2 font-semibold">✨ 제미나이 2.0 기억력 탑재 완료!</p>
+            <p className="text-blue-500 text-sm mt-2 font-semibold">✨ 사진 분석(Vision) 기능 탑재 완료!</p>
           </div>
         )}
 
@@ -109,6 +127,10 @@ export default function Home() {
                 ? "bg-blue-500 text-white rounded-2xl rounded-tr-none whitespace-pre-wrap"
                 : "bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-none overflow-hidden"
             }`}>
+              {/* ⭐ 3. 내가 보낸 사진이 말풍선 안에 예쁘게 뜨도록 추가 */}
+              {msg.image && (
+                <img src={msg.image} alt="첨부됨" className="w-full max-w-xs h-auto rounded-lg mb-2 shadow-sm border border-blue-400" />
+              )}
               {msg.role === "model" ? (
                 <div className="whitespace-pre-wrap break-words prose prose-sm">
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
@@ -123,31 +145,45 @@ export default function Home() {
         {isLoading && (
           <div className="flex justify-start">
             <div className="px-4 py-3 bg-gray-100 text-gray-500 rounded-2xl rounded-tl-none text-sm shadow-sm animate-pulse">
-              제미나이가 열심히 답변을 작성 중입니다... ✍️
+              제미나이가 열심히 사진을 분석 중입니다... 🔍
             </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      <footer className="bg-white p-4 border-t border-gray-100 pb-8 md:pb-4">
-        <div className="flex gap-2 max-w-xl mx-auto">
+      <footer className="bg-white p-4 border-t border-gray-100 pb-8 md:pb-4 flex flex-col gap-2">
+        {selectedImage && (
+          <div className="relative inline-block w-24 h-24 max-w-xl mx-auto self-start ml-2 mb-2 animate-fade-in-up">
+            <img src={selectedImage} alt="미리보기" className="object-cover w-full h-full rounded-lg border border-gray-300 shadow-sm" />
+            <button
+              onClick={handleRemoveImage}
+              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold hover:bg-red-600 shadow-md"
+            >X</button>
+          </div>
+        )}
+
+        <div className="flex gap-2 max-w-xl mx-auto w-full items-center">
+          <label htmlFor="imageUpload" className="cursor-pointer text-gray-500 hover:text-blue-600 transition-colors p-2 bg-gray-100 rounded-full hover:bg-gray-200">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+            </svg>
+          </label>
+          <input type="file" id="imageUpload" accept="image/*" className="hidden" onChange={handleImageUpload} />
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
-            placeholder="증상이나 궁금한 점을 연속해서 물어보세요..."
+            placeholder="사진을 첨부하거나 증상을 입력하세요..."
             className="flex-1 rounded-full border border-gray-200 px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
           />
           <button
             onClick={handleSend}
-            disabled={isLoading}
+            disabled={isLoading || (inputValue.trim() === "" && !selectedImage)}
             className="rounded-full bg-blue-600 px-6 py-3 font-bold text-white transition-all hover:bg-blue-700 active:scale-95 whitespace-nowrap disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            전송
-          </button>
+          >전송</button>
         </div>
       </footer>
     </main>
