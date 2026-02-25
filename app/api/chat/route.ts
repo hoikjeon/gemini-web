@@ -1,64 +1,57 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-
-// ⭐ 모델 이름을 gemini-2.5-flash로 수정했습니다!
 const model = genAI.getGenerativeModel({
-  model: "gemini-2.5-flash", 
-  systemInstruction: "당신은 연세척병원의 김동한 원장님을 보조하는 '허리인사이드' 유튜브 채널의 척추 및 관절 전문 AI 상담사입니다. 환자의 증상 질문에 친절하고 전문적인 의학 지식을 바탕으로 답변하세요. 단, 답변 마지막에는 항상 '정확한 진단과 치료를 위해 반드시 병원에 방문하여 전문의의 진료를 받아보시기를 권장합니다.'라는 문구를 포함하세요.",
+  model: "gemini-2.0-flash",
+  systemInstruction: "당신은 연세척병원 김동한 원장 보조 AI '허리인사이드'입니다. 환자에게 친절하고 전문적으로 상담하세요.",
 });
 
 export async function POST(req: Request) {
   try {
     const { messages } = await req.json();
 
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return new Response(JSON.stringify({ error: "메시지가 없습니다." }), { status: 400 });
-    }
-
     const formatMessage = (msg: any) => {
-      const parts: any[] = [{ text: msg.content || "사진을 보냈습니다." }];
+      const parts: any[] = [{ text: msg.content || "상담 내용" }];
       
-      if (msg.image) {
-        const mimeType = msg.image.split(';')[0].split(':')[1];
-        const base64Data = msg.image.split(',')[1];
-        parts.push({
-          inlineData: { data: base64Data, mimeType }
-        });
+      // ⭐ 철벽 방어: msg.image가 '존재'하고 '문자열'이며 '내용이 있을' 때만 실행
+      if (msg && msg.image && typeof msg.image === 'string' && msg.image.length > 0) {
+        try {
+          // 데이터가 base64 형식(콤마 포함)인지 한 번 더 확인
+          if (msg.image.includes(',')) {
+            const mimeType = msg.image.split(';')[0].split(':')[1] || 'image/jpeg';
+            const base64Data = msg.image.split(',')[1];
+            if (base64Data) {
+              parts.push({ inlineData: { data: base64Data, mimeType } });
+            }
+          }
+        } catch (e) {
+          console.error("이미지 데이터 처리 스킵 (형식 불일치)");
+        }
       }
       return parts;
     };
 
-    const history = messages.slice(0, -1).map((msg: any) => ({
+    const history = (messages || []).slice(0, -1).map((msg: any) => ({
       role: msg.role === "user" ? "user" : "model",
       parts: formatMessage(msg),
     }));
 
-    const lastMessageObj = messages[messages.length - 1];
-    const lastMessageParts = formatMessage(lastMessageObj);
-
+    const lastMsg = messages[messages.length - 1];
     const chat = model.startChat({ history });
-    const result = await chat.sendMessageStream(lastMessageParts);
+    const result = await chat.sendMessageStream(formatMessage(lastMsg));
 
     const stream = new ReadableStream({
       async start(controller) {
         for await (const chunk of result.stream) {
-          const chunkText = chunk.text();
-          controller.enqueue(new TextEncoder().encode(chunkText));
+          controller.enqueue(new TextEncoder().encode(chunk.text()));
         }
         controller.close();
       },
     });
 
-    return new Response(stream, {
-      headers: { "Content-Type": "text/event-stream" },
-    });
-
+    return new Response(stream);
   } catch (error) {
-    console.error("API Route 에러:", error);
-    return new Response(JSON.stringify({ error: "서버 에러 발생" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    console.error("Critical API Error:", error);
+    return new Response(JSON.stringify({ error: "서버 내부 데이터 처리 오류" }), { status: 500 });
   }
 }
